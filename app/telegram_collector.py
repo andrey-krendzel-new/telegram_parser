@@ -24,7 +24,23 @@ CHANNEL = "durov"
 KEYWORDS = [
     "python",
     "разработчик",
+    "разработка",
+    "программист",
+    "программирование",
     "автоматизация",
+    "автоматизировать",
+    "бот",
+    "telegram bot",
+    "телеграм-бот",
+    "ищу специалиста",
+    "ищу разработчика",
+    "нужен разработчик",
+    "нужен программист",
+    "заказать разработку",
+    "парсер",
+    "веб-скрапинг",
+    "сбор данных",
+    "api",
 ]
 
 DATA_DIR = Path("data")
@@ -65,10 +81,32 @@ def contains_keywords(text):
         for keyword in KEYWORDS
     )
 
+def is_potential_lead(text):
+    """Проверяет, похожа ли публикация на поиск исполнителя."""
 
+    text = text.casefold()
+
+    lead_phrases = [
+        "ищу разработчика",
+        "ищем разработчика",
+        "нужен разработчик",
+        "нужен программист",
+        "ищу программиста",
+        "ищем программиста",
+        "ищу специалиста",
+        "ищем специалиста",
+        "заказать разработку",
+        "нужен бот",
+        "заказать бота",
+        "ищу исполнителя",
+        "требуется разработчик",
+        "требуется программист",
+    ]
+
+    return any(phrase in text for phrase in lead_phrases)
+    
 async def collect_telegram():
     """Получает последние сообщения из Telegram."""
-
     client = TelegramClient(
         "socialpulse_session",
         API_ID,
@@ -101,9 +139,11 @@ async def collect_telegram():
             if not contains_keywords(message.message):
                 continue
 
-            message_id = str(message.id)
+            if not is_potential_lead(message.message):
+                continue
 
-            key = ("telegram", message_id)
+            print("Найден потенциальный заказ:", message.message[:100].replace("\n", " "))
+            message_id = str(message.id)
 
             if key in existing_ids:
                 continue
