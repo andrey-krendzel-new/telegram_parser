@@ -104,6 +104,37 @@ def is_potential_lead(text):
     ]
 
     return any(phrase in text for phrase in lead_phrases)
+
+def score_lead(text):
+    text = text.casefold()
+    score = 0
+
+    strong_phrases = [
+    "ищу разработчика",
+    "ищем разработчика",
+    "нужен разработчик",
+    "ищу программиста",
+    "нужен программист",
+    "ищу исполнителя",
+    "заказать разработку",
+]
+
+    technical_words = [
+    "python",
+    "бот",
+    "автоматизация",
+    "парсер",
+    "api",
+]
+
+    if any(phrase in text for phrase in strong_phrases):
+        score += 2
+
+    if any(word in text for word in technical_words):
+        score += 1
+
+    return score
+
     
 async def collect_telegram():
     """Получает последние сообщения из Telegram."""
@@ -164,6 +195,8 @@ async def collect_telegram():
                 "collected_at": (
                     datetime.now().astimezone().isoformat()
                 ),
+                "status": "new",
+                "lead_score": score_lead(message.message),
             }
 
             saved.append(publication)
