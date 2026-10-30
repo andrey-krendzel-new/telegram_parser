@@ -173,20 +173,23 @@ async def collect_telegram():
             if not is_potential_lead(message.message):
                 continue
 
-            print("Найден потенциальный заказ:", message.message[:100].replace("\n", " "))
             message_id = str(message.id)
+            key = ("telegram", message_id)
 
             if key in existing_ids:
                 continue
+
+            print(
+                "Найден потенциальный заказ:",
+                message.message[:100].replace("\\n", " ")
+            )
 
             publication = {
                 "id": message_id,
                 "source": "telegram",
                 "channel": CHANNEL,
                 "text": message.message,
-                "url": (
-                    f"https://t.me/{CHANNEL}/{message.id}"
-                ),
+                "url": f"https://t.me/{CHANNEL}/{message.id}",
                 "published_at": (
                     message.date.isoformat()
                     if message.date
@@ -203,14 +206,12 @@ async def collect_telegram():
             existing_ids.add(key)
             new_count += 1
 
-            print(
-                f"\nНайдена публикация #{message.id}:"
-            )
+            print(f"\\nНайдена публикация #{message.id}:")
             print(message.message[:200])
 
         save_publications(saved)
 
-        print("\nСбор завершён.")
+        print("\\nСбор завершён.")
         print(f"Новых публикаций: {new_count}")
         print(f"Всего сохранено: {len(saved)}")
 
