@@ -21,6 +21,8 @@ function App() {
         }
 
         const data = await response.json()
+        const statusesResponse = await fetch(`${API_URL}/api/statuses`)
+        const savedStatuses = await statusesResponse.json()
 
         const preparedLeads = data.map((item) => ({
           id: item.id,
@@ -29,7 +31,7 @@ function App() {
           source: item.source,
           date: new Date(item.collected_at).toLocaleDateString('ru-RU'),
           score: 0,
-          status: 'Новая',
+          status: savedStatuses[String(item.id)] || 'Новая',
           url: '#',
         }))
 
@@ -57,13 +59,29 @@ function App() {
     })
   }, [leads, search, filter])
 
-  const updateStatus = (id, status) => {
+const updateStatus = async (id, status) => {
+  try {
+    const response = await fetch(`${API_URL}/api/leads/${id}/status`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ status }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Не удалось сохранить статус')
+    }
+
     setLeads((current) =>
       current.map((lead) =>
         lead.id === id ? { ...lead, status } : lead
       )
     )
+  } catch (error) {
+    alert('Ошибка сохранения статуса. Проверь работу API.')
   }
+}
 
   const newCount = leads.filter((lead) => lead.status === 'Новая').length
   const activeCount = leads.filter((lead) => lead.status === 'В работе').length
