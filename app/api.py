@@ -18,6 +18,7 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_FILE = BASE_DIR / "data" / "publications.json"
 STATUS_FILE = BASE_DIR / "data" / "lead_statuses.json"
+NOTES_FILE = BASE_DIR / "data" / "lead_notes.json"
 
 VALID_STATUSES = ["Новая", "В работе", "Успешно", "Отклонена"]
 
@@ -25,13 +26,19 @@ VALID_STATUSES = ["Новая", "В работе", "Успешно", "Откло
 class StatusUpdate(BaseModel):
     status: str
 
+class NoteUpdate(BaseModel):
+    note: str
 
-def read_statuses():
-    if not STATUS_FILE.exists():
+def read_notes():
+    if not NOTES_FILE.exists():
         return {}
 
-    with open(STATUS_FILE, "r", encoding="utf-8") as file:
+    with open(NOTES_FILE, "r", encoding="utf-8") as file:
         return json.load(file)
+
+def save_notes(notes):
+    with open(NOTES_FILE, "w", encoding="utf-8") as file:
+        json.dump(notes, file, ensure_ascii=False, indent=2)
 
 
 def save_statuses(statuses):
@@ -58,6 +65,33 @@ def get_stats():
     publications = get_leads()
     return {"total": len(publications)}
 
+@app.get("/api/leads/{lead_id}/notes")
+def get_lead_notes(lead_id: int):
+    publications = get_leads()
+
+    if not any(str(item["id"]) == str(lead_id) for item in publications):
+        raise HTTPException(status_code=404, detail="Публикация не найдена")
+
+    notes = read_notes()
+    return {"note": notes.get(str(lead_id), "")}
+
+
+@app.put("/api/leads/{lead_id}/notes")
+def update_lead_notes(lead_id: int, update: NoteUpdate):
+    publications = get_leads()
+
+    if not any(str(item["id"]) == str(lead_id) for item in publications):
+        raise HTTPException(status_code=404, detail="Публикация не найдена")
+
+    notes = read_notes()
+    notes[str(lead_id)] = update.note
+    save_notes(notes)
+
+    return {
+        "message": "Заметка сохранена",
+        "id": lead_id,
+        "note": update.note,
+    }
 
 @app.get("/api/statuses")
 def get_statuses():
