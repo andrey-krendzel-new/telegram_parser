@@ -1,50 +1,82 @@
 import { useEffect, useMemo, useState } from 'react'
+import { supabase } from './lib/supabase'
+import Login from './components/Login'
 import './index.css'
 
 const API_URL = 'http://127.0.0.1:8000'
 
 function App() {
+  const [user, setUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [leads, setLeads] = useState([])
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('Все')
-  const [activeNav, setActiveNav] = useState('Обзор')
+  const [activeNav, setActiveNav] = useState('Overview')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    async function loadLeads() {
-      try {
-        const response = await fetch(`${API_URL}/api/leads`)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthLoading(false)
+    })
 
-        if (!response.ok) {
-          throw new Error('Не удалось получить публикации')
-        }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
 
-        const data = await response.json()
-        const statusesResponse = await fetch(`${API_URL}/api/statuses`)
-        const savedStatuses = await statusesResponse.json()
-
-        const preparedLeads = data.map((item) => ({
-          id: item.id,
-          title: item.text.slice(0, 65),
-          text: item.text,
-          source: item.source,
-          date: new Date(item.collected_at).toLocaleDateString('ru-RU'),
-          score: 0,
-          status: savedStatuses[String(item.id)] || 'Новая',
-          url: '#',
-        }))
-
-        setLeads(preparedLeads)
-      } catch (err) {
-        setError('Не удалось подключиться к API. Проверь, запущен ли сервер.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadLeads()
+    return () => subscription.unsubscribe()
   }, [])
+
+
+   useEffect(() => {
+
+  if (!user) return
+
+  async function loadLeads() {
+    setLoading(true)
+    setError('')
+
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('id, source, text, collected_at, status, author_name, author_username, author_url')
+        .order('collected_at', { ascending: false })
+
+      if (error) {
+        throw error
+      }
+
+      const preparedLeads = data.map((item) => ({
+        id: item.id,
+        title: (item.text || '').slice(0, 65),
+        text: item.text || '',
+        source: item.source || '',
+        date: item.collected_at
+          ? new Date(item.collected_at).toLocaleDateString('en-GB')
+          : '',
+        score: 0,
+        status: item.status || 'Новая',
+        url: '#',
+        authorName: item.author_name || '',
+        authorUsername: item.author_username || '',
+        authorUrl: item.author_url || '',
+      }))
+
+      setLeads(preparedLeads)
+      console.log('Publications loaded:', preparedLeads.length)
+    } catch (err) {
+      console.error('Error loading publications:', err)
+      setError('Failed to load publications from Supabase.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  loadLeads()
+}, [user])
 
   const filteredLeads = useMemo(() => {
     return leads.filter((lead) => {
@@ -59,29 +91,35 @@ function App() {
     })
   }, [leads, search, filter])
 
-const updateStatus = async (id, status) => {
-  try {
-    const response = await fetch(`${API_URL}/api/leads/${id}/status`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ status }),
-    })
+  const updateStatus = async (id, status) => {
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ status })
+        .eq('id', String(id))
 
-    if (!response.ok) {
-      throw new Error('Не удалось сохранить статус')
-    }
+      if (error) {
+        throw error
+      }
 
-    setLeads((current) =>
-      current.map((lead) =>
-        lead.id === id ? { ...lead, status } : lead
+      setLeads((current) =>
+        current.map((lead) =>
+          lead.id === id ? { ...lead, status } : lead
+        )
       )
-    )
-  } catch (error) {
-    alert('Ошибка сохранения статуса. Проверь работу API.')
+    } catch (error) {
+      console.error('Error saving status:', error)
+      alert('Failed to save status to Supabase.')
+    }
   }
-}
+
+  if (authLoading) {
+    return <div className="empty-state">Checking authentication...</div>
+  }
+
+  if (!user) {
+    return <Login />
+  }
 
   const newCount = leads.filter((lead) => lead.status === 'Новая').length
   const activeCount = leads.filter((lead) => lead.status === 'В работе').length
@@ -98,13 +136,13 @@ const updateStatus = async (id, status) => {
           </div>
         </div>
 
-        <div className="workspace-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+        <div className="workspace-label">WORKSPACE</div>
 
         <nav className="navigation">
           {[
-            { icon: '▦', label: 'Обзор' },
-            { icon: '◎', label: 'Все лиды' },
-            { icon: '◉', label: 'Источники' },
+            { icon: '▦', label: 'Overview' },
+            { icon: '◎', label: 'All Leads' },
+            { icon: '◉', label: 'Sources' },
           ].map((item) => (
             <button
               key={item.label}
@@ -113,7 +151,7 @@ const updateStatus = async (id, status) => {
             >
               <span className="nav-icon">{item.icon}</span>
               {item.label}
-              {item.label === 'Все лиды' && (
+              {item.label === 'All Leads' && (
                 <span className="nav-count">{leads.length}</span>
               )}
             </button>
@@ -124,67 +162,85 @@ const updateStatus = async (id, status) => {
           <div className="connection-dot" />
           <div>
             <div className="connection-title">
-              {error ? 'Нет подключения' : 'Система готова'}
+              {error ? 'Disconnected' : 'System Online'}
             </div>
-            <div className="connection-caption">Подключение к API</div>
+            <div className="connection-caption">API Connection</div>
           </div>
         </div>
       </aside>
 
-      <main className="main-content">
-        <header className="topbar">
-          <div className="breadcrumbs">
-            Рабочее пространство <span>/</span> {activeNav}
-          </div>
-          <div className="profile">
-            <div className="profile-avatar">SP</div>
-            <div>
-              <div className="profile-name">Мой проект</div>
-              <div className="profile-role">Администратор</div>
-            </div>
-          </div>
-        </header>
+<main className="main-content">
+  <header className="topbar">
+    <div className="breadcrumbs">
+      Workspace <span>/</span> {activeNav}
+    </div>
+
+    <div className="profile">
+      <div className="profile-avatar">SP</div>
+      <div>
+        <div className="profile-name">{user.email}</div>
+        <div className="profile-role">SocialPulse User</div>
+      </div>
+
+      <button
+        onClick={async () => {
+          const { error } = await supabase.auth.signOut()
+          if (error) alert('Failed to sign out.')
+        }}
+        style={{
+          marginLeft: '16px',
+          padding: '8px 14px',
+          cursor: 'pointer',
+          borderRadius: '8px',
+          border: '1px solid #ddd',
+          background: 'white',
+        }}
+      >
+        Sign Out
+      </button>
+    </div>
+  </header>
 
         <section className="page-content">
           <div className="page-heading">
             <div>
-              <div className="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</div>
-              <h1>{activeNav === 'Обзор' ? 'Обзор лидов' : activeNav}</h1>
+              <div className="eyebrow">DASHBOARD</div>
+              <h1>{activeNav === 'Overview' ? 'Lead Overview' : activeNav}</h1>
               <p className="page-description">
-                Находите возможности для бизнеса и управляйте заявками в одном месте.
+                Discover business opportunities and manage leads in one place.
               </p>
             </div>
             <div className="date-chip">
-              <span>◷</span> Последние публикации
+              <span>◷</span> Latest Publications
             </div>
           </div>
 
           <div className="stats-grid">
             <StatCard
-              label="Всего публикаций"
+              label="Total Publications"
               value={leads.length}
-              note="Загружено из Telegram"
+              note="Collected from Telegram"
               icon="◎"
               tone="purple"
             />
             <StatCard
-              label="Новые"
+              label="New"
               value={newCount}
-              note="Ожидают рассмотрения"
+              note="Awaiting review"
               icon="✳"
               tone="blue"
             />
             <StatCard
-              label="В работе"
+              label="In Progress"
               value={activeCount}
-              note="Активные заявки"
+              note="Active leads"
               icon="↗"
               tone="orange"
             />
             <StatCard
-              label="Успешно"
+              label="Successful"
               value={successfulCount}
-              note="Завершённые заявки"
+              note="Completed leads"
               icon="✦"
               tone="green"
             />
@@ -193,8 +249,8 @@ const updateStatus = async (id, status) => {
           <section className="leads-panel">
             <div className="panel-heading">
               <div>
-                <h2>Последние публикации</h2>
-                <p>Данные загружены из твоей базы публикаций</p>
+                <h2>Latest Publications</h2>
+                <p>Data loaded from your publications database</p>
               </div>
               <span className="demo-badge">LIVE DATA</span>
             </div>
@@ -205,13 +261,13 @@ const updateStatus = async (id, status) => {
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Поиск по публикациям..."
+                  placeholder="Search publications..."
                 />
                 {search && (
                   <button
                     className="clear-search"
                     onClick={() => setSearch('')}
-                    aria-label="Очистить поиск"
+                    aria-label="Clear search"
                   >
                     ×
                   </button>
@@ -222,17 +278,17 @@ const updateStatus = async (id, status) => {
                 className="filter-select"
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
-                aria-label="Фильтр по статусу"
+                aria-label="Filter by status"
               >
-                <option>Все</option>
-                <option>Новая</option>
-                <option>В работе</option>
-                <option>Успешно</option>
-                <option>Отклонена</option>
+                <option value="Все">All</option>
+                <option value="Новая">New</option>
+                <option value="В работе">In Progress</option>
+                <option value="Успешно">Successful</option>
+                <option value="Отклонена">Rejected</option>
               </select>
             </div>
 
-            {loading && <div className="empty-state">Загружаем публикации...</div>}
+            {loading && <div className="empty-state">Loading publications...</div>}
 
             {error && <div className="empty-state">{error}</div>}
 
@@ -241,10 +297,10 @@ const updateStatus = async (id, status) => {
                 <table>
                   <thead>
                     <tr>
-                      <th>ПУБЛИКАЦИЯ</th>
-                      <th>ИСТОЧНИК</th>
-                      <th>ДАТА</th>
-                      <th>СТАТУС</th>
+                      <th>PUBLICATION</th>
+                      <th>SOURCE</th>
+                      <th>DATE</th>
+                      <th>STATUS</th>
                     </tr>
                   </thead>
 
@@ -253,6 +309,18 @@ const updateStatus = async (id, status) => {
                       <tr key={lead.id}>
                         <td>
                           <div className="lead-title">{lead.title}</div>
+                          {lead.authorName && (
+                          <div className="lead-author">
+                            Author:{' '}
+                            {lead.authorUrl ? (
+                              <a href={lead.authorUrl} target="_blank" rel="noreferrer">
+                                {lead.authorName}
+                              </a>
+                            ) : (
+                              lead.authorName
+                            )}
+                          </div>
+                        )}
                           <div className="lead-description">{lead.text}</div>
                         </td>
 
@@ -273,10 +341,10 @@ const updateStatus = async (id, status) => {
                               updateStatus(lead.id, event.target.value)
                             }
                           >
-                            <option>Новая</option>
-                            <option>В работе</option>
-                            <option>Успешно</option>
-                            <option>Отклонена</option>
+                            <option value="Новая">New</option>
+                            <option value="В работе">In Progress</option>
+                            <option value="Успешно">Successful</option>
+                            <option value="Отклонена">Rejected</option>
                           </select>
                         </td>
                       </tr>
@@ -287,8 +355,8 @@ const updateStatus = async (id, status) => {
                 {filteredLeads.length === 0 && (
                   <div className="empty-state">
                     <div className="empty-icon">⌕</div>
-                    <h3>Ничего не найдено</h3>
-                    <p>Попробуй изменить поисковый запрос или фильтр.</p>
+                    <h3>No results found</h3>
+                    <p>Try changing your search query or filter.</p>
                     <button
                       className="reset-button"
                       onClick={() => {
@@ -296,7 +364,7 @@ const updateStatus = async (id, status) => {
                         setFilter('Все')
                       }}
                     >
-                      Сбросить фильтры
+                      Reset Filters
                     </button>
                   </div>
                 )}
@@ -305,16 +373,16 @@ const updateStatus = async (id, status) => {
 
             <div className="table-footer">
               <span>
-                Показано <strong>{filteredLeads.length}</strong> из{' '}
-                <strong>{leads.length}</strong> публикаций
+                Showing <strong>{filteredLeads.length}</strong> of{' '}
+                <strong>{leads.length}</strong> publications
               </span>
-              <span className="footer-note">Данные из Python API</span>
+              <span className="footer-note">Data from Python API</span>
             </div>
           </section>
 
           <footer className="page-footer">
             <span>© 2026 SocialPulse CRM</span>
-            <span>Создано для поиска новых возможностей</span>
+            <span>Built to discover new opportunities</span>
           </footer>
         </section>
       </main>

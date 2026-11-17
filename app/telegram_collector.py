@@ -70,6 +70,73 @@ def save_publications(publications):
             indent=4,
         )
 
+def save_to_supabase(publications):
+    """Отправляет новые публикации в Supabase без дубликатов."""
+
+    from urllib.request import Request, urlopen
+    from urllib.parse import urlencode
+
+    supabase_url = os.environ["SUPABASE_URL"].rstrip("/")
+    supabase_key = os.environ["SUPABASE_KEY"]
+
+    # Получаем ID уже сохранённых Telegram-публикаций.
+    query = urlencode({
+        "select": "id",
+        "source": "eq.telegram",
+    })
+
+    request = Request(
+        f"{supabase_url}/rest/v1/leads?{query}",
+        headers={
+            "apikey": supabase_key,
+        },
+    )
+
+    with urlopen(request, timeout=30) as response:
+        existing = json.loads(response.read().decode("utf-8"))
+
+    existing_ids = {item["id"] for item in existing}
+
+    rows = []
+
+    for publication in publications:
+        message_id = str(publication["id"])
+        supabase_id = f"telegram:{CHANNEL}:{message_id}"
+
+        if supabase_id in existing_ids:
+            continue
+
+    rows.append({
+        "id": supabase_id,
+        "source": "telegram",
+        "text": publication["text"],
+        "collected_at": publication["collected_at"],
+        "status": "Новая",
+        "author_name": publication.get("author_name", ""),
+        "author_username": publication.get("author_username", ""),
+        "author_url": publication.get("author_url", ""),
+    })
+
+    if not rows:
+        print("Новых записей для Supabase нет.")
+        return
+
+    request = Request(
+        f"{supabase_url}/rest/v1/leads",
+        data=json.dumps(rows, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "apikey": supabase_key,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        },
+        method="POST",
+    )
+
+    with urlopen(request, timeout=30) as response:
+        print("Supabase: HTTP", response.status)
+
+    print(f"Отправлено в Supabase: {len(rows)}")
+
 
 def contains_keywords(text):
     """Проверяет наличие ключевых слов."""
@@ -158,6 +225,7 @@ async def collect_telegram():
         }
 
         new_count = 0
+        new_publications = []
 
         # Читаем последние 100 сообщений.
         async for message in client.iter_messages(
@@ -184,7 +252,32 @@ async def collect_telegram():
                 message.message[:100].replace("\\n", " ")
             )
 
+            sender = await message.get_sender()
+
+            author_name = ""
+            author_username = ""
+            author_url = ""
+
+            if sender:
+                first_name = getattr(sender, "first_name", "") or ""
+                last_name = getattr(sender, "last_name", "") or ""
+                sender_title = getattr(sender, "title", "") or ""
+
+                author_name = (
+                    getattr(message, "post_author", None)
+                    or f"{first_name} {last_name}".strip()
+                    or sender_title
+                )
+
+                author_username = getattr(sender, "username", "") or ""
+
+                if author_username:
+                    author_url = f"https://t.me/{author_username}"
+
             publication = {
+                "author_name": author_name,
+                "author_username": author_username,
+                "author_url": author_url,
                 "id": message_id,
                 "source": "telegram",
                 "channel": CHANNEL,
@@ -203,6 +296,7 @@ async def collect_telegram():
             }
 
             saved.append(publication)
+            new_publications.append(publication)
             existing_ids.add(key)
             new_count += 1
 
@@ -210,6 +304,11 @@ async def collect_telegram():
             print(message.message[:200])
 
         save_publications(saved)
+
+        try:
+            save_to_supabase(new_publications)
+        except Exception as error:
+            print(f"Ошибка отправки в Supabase: {error}")
 
         print("\\nСбор завершён.")
         print(f"Новых публикаций: {new_count}")

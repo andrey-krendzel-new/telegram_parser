@@ -6,3 +6,5 @@ __pycache__/
 socialpulse_session.session
 data/*.json
 *.bak
+frontend/.env.local
+frontend/.env.local

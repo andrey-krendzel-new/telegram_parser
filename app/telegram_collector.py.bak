@@ -176,45 +176,44 @@ async def collect_telegram():
             message_id = str(message.id)
             key = ("telegram", message_id)
 
-                if key in existing_ids:
-                    continue
-
-                print("Найден потенциальный заказ:", message.message[:100].replace("\n", " "))
-
-                publication = {
-                    "id": message_id,
-                    "source": "telegram",
-                    "channel": CHANNEL,
-                    "text": message.message,
-                    "url": (
-                        f"https://t.me/{CHANNEL}/{message.id}"
-                    ),
-                    "published_at": (
-                        message.date.isoformat()
-                        if message.date
-                        else None
-                    ),
-                    "collected_at": (
-                        datetime.now().astimezone().isoformat()
-                    ),
-                    "status": "new",
-                    "lead_score": score_lead(message.message),
-                }
-
-                saved.append(publication)
-                existing_ids.add(key)
-                new_count += 1
+            if key in existing_ids:
+                continue
 
             print(
-                f"\nНайдена публикация #{message.id}:"
+                "Найден потенциальный заказ:",
+                message.message[:100].replace("\\n", " ")
             )
+
+            publication = {
+                "id": message_id,
+                "source": "telegram",
+                "channel": CHANNEL,
+                "text": message.message,
+                "url": f"https://t.me/{CHANNEL}/{message.id}",
+                "published_at": (
+                    message.date.isoformat()
+                    if message.date
+                    else None
+                ),
+                "collected_at": (
+                    datetime.now().astimezone().isoformat()
+                ),
+                "status": "new",
+                "lead_score": score_lead(message.message),
+            }
+
+            saved.append(publication)
+            existing_ids.add(key)
+            new_count += 1
+
+            print(f"\\nНайдена публикация #{message.id}:")
             print(message.message[:200])
 
-            save_publications(saved)
+        save_publications(saved)
 
-            print("\nСбор завершён.")
-            print(f"Новых публикаций: {new_count}")
-            print(f"Всего сохранено: {len(saved)}")
+        print("\\nСбор завершён.")
+        print(f"Новых публикаций: {new_count}")
+        print(f"Всего сохранено: {len(saved)}")
 
     finally:
         await client.disconnect()
