@@ -5,3 +5,6 @@ Connects to Telegram channels associated to your account and saves messages cont
 React front-end.
 
 Demo: https://telegram-parser-sigma.vercel.app/
+
+Email: demo@socialpulse.app
+Password: demodemo
