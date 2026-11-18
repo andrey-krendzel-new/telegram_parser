@@ -116,3 +116,9 @@ ConnectionError: Connection to Telegram failed 5 time(s)
 \nСбор завершён.
 Новых публикаций: 0
 Всего сохранено: 99
+Подключение к Telegram успешно.
+Источник: durov
+Ошибка отправки в Supabase: cannot access local variable 'supabase_id' where it is not associated with a value
+\nСбор завершён.
+Новых публикаций: 0
+Всего сохранено: 99
