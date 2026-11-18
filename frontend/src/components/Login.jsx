@@ -46,7 +46,7 @@ function Login() {
           required
         />
 
-        Sähköposti: demo@socialpulse-crm.app
+        Sähköposti: demo@socialpulse.app
         Salasana: demodemo
 
         {error && <p className="login-error">{error}</p>}
