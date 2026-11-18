@@ -46,6 +46,9 @@ function Login() {
           required
         />
 
+        Sähköposti: demo@socialpulse-crm.app
+        Salasana: demodemo
+
         {error && <p className="login-error">{error}</p>}
 
         <button type="submit" disabled={loading}>
