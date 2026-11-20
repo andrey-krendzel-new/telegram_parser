@@ -41,7 +41,7 @@ function App() {
     try {
       const { data, error } = await supabase
         .from('leads')
-        .select('id, source, text, collected_at, status, author_name, author_username, author_url')
+        .select('id, source, channel, text, collected_at, status, author_name, author_username, author_url')
         .order('collected_at', { ascending: false })
 
       if (error) {
@@ -53,6 +53,7 @@ function App() {
         title: (item.text || '').slice(0, 65),
         text: item.text || '',
         source: item.source || '',
+        channel: item.channel || '',
         date: item.collected_at
           ? new Date(item.collected_at).toLocaleDateString('en-GB')
           : '',
@@ -323,12 +324,18 @@ function App() {
                           <div className="lead-description">{lead.text}</div>
                         </td>
 
-                        <td>
-                          <span className="source-label">
-                            <span className="telegram-mark">➤</span>
-                            {lead.source}
-                          </span>
-                        </td>
+                      <div>
+                        <span className="source-label">
+                          <span className="telegram-mark">➤</span>
+                          {lead.source}
+                        </span>
+
+                        {lead.channel && (
+                          <div style={{ fontSize: '12px', color: '#888', marginTop: '5px' }}>
+                            Channel: @{lead.channel}
+                          </div>
+                        )}
+                      </div>
 
                         <td className="date-cell">{lead.date}</td>
 

@@ -18,7 +18,7 @@ API_HASH = os.environ["TELEGRAM_API_HASH"]
 # Источники для мониторинга.
 # Для первого теста укажи публичный канал,
 # доступный твоему аккаунту.
-CHANNEL = "durov"
+CHANNELS = ["durov", "telegram"]
 
 # Ключевые слова для поиска
 KEYWORDS = [
@@ -76,10 +76,13 @@ def save_to_supabase(publications):
     from urllib.request import Request, urlopen
     from urllib.parse import urlencode
 
+    if not publications:
+        print("Новых записей для Supabase нет.")
+        return
+
     supabase_url = os.environ["SUPABASE_URL"].rstrip("/")
     supabase_key = os.environ["SUPABASE_KEY"]
 
-    # Получаем ID уже сохранённых Telegram-публикаций.
     query = urlencode({
         "select": "id",
         "source": "eq.telegram",
@@ -87,35 +90,34 @@ def save_to_supabase(publications):
 
     request = Request(
         f"{supabase_url}/rest/v1/leads?{query}",
-        headers={
-            "apikey": supabase_key,
-        },
+        headers={"apikey": supabase_key},
     )
 
     with urlopen(request, timeout=30) as response:
         existing = json.loads(response.read().decode("utf-8"))
 
     existing_ids = {item["id"] for item in existing}
-
     rows = []
 
     for publication in publications:
         message_id = str(publication["id"])
-        supabase_id = f"telegram:{CHANNEL}:{message_id}"
+        channel = publication.get("channel", "durov")
+        supabase_id = f"telegram:{channel}:{message_id}"
 
         if supabase_id in existing_ids:
             continue
 
-    rows.append({
-        "id": supabase_id,
-        "source": "telegram",
-        "text": publication["text"],
-        "collected_at": publication["collected_at"],
-        "status": "Новая",
-        "author_name": publication.get("author_name", ""),
-        "author_username": publication.get("author_username", ""),
-        "author_url": publication.get("author_url", ""),
-    })
+        rows.append({
+            "id": supabase_id,
+            "source": "telegram",
+            "channel": publication.get("channel", ""),
+            "text": publication["text"],
+            "collected_at": publication["collected_at"],
+            "status": "Новая",
+            "author_name": publication.get("author_name", ""),
+            "author_username": publication.get("author_username", ""),
+            "author_url": publication.get("author_url", ""),
+        })
 
     if not rows:
         print("Новых записей для Supabase нет.")
@@ -136,7 +138,6 @@ def save_to_supabase(publications):
         print("Supabase: HTTP", response.status)
 
     print(f"Отправлено в Supabase: {len(rows)}")
-
 
 def contains_keywords(text):
     """Проверяет наличие ключевых слов."""
@@ -204,7 +205,8 @@ def score_lead(text):
 
     
 async def collect_telegram():
-    """Получает последние сообщения из Telegram."""
+    """Получает последние сообщения из нескольких Telegram-каналов."""
+
     client = TelegramClient(
         "socialpulse_session",
         API_ID,
@@ -213,95 +215,102 @@ async def collect_telegram():
 
     try:
         await client.start()
-
-        print(f"Подключение к Telegram успешно.")
-        print(f"Источник: {CHANNEL}")
+        print("Подключение к Telegram успешно.")
 
         saved = load_publications()
 
         existing_ids = {
-            (item["source"], str(item["id"]))
+            (
+                item["source"],
+                item.get("channel", "durov"),
+                str(item["id"]),
+            )
             for item in saved
         }
 
         new_count = 0
         new_publications = []
 
-        # Читаем последние 100 сообщений.
-        async for message in client.iter_messages(
-            CHANNEL,
-            limit=100,
-        ):
-            if not message.message:
-                continue
+        for channel in CHANNELS:
+            channel = channel.lstrip("@")
+            print(f"\\nСканируем канал: {channel}")
 
-            if not contains_keywords(message.message):
-                continue
+            try:
+                async for message in client.iter_messages(
+                    channel,
+                    limit=100,
+                ):
+                    if not message.message:
+                        continue
 
-            if not is_potential_lead(message.message):
-                continue
+                    if not contains_keywords(message.message):
+                        continue
 
-            message_id = str(message.id)
-            key = ("telegram", message_id)
+                    if not is_potential_lead(message.message):
+                        continue
 
-            if key in existing_ids:
-                continue
+                    message_id = str(message.id)
+                    key = ("telegram", channel, message_id)
 
-            print(
-                "Найден потенциальный заказ:",
-                message.message[:100].replace("\\n", " ")
-            )
+                    if key in existing_ids:
+                        continue
 
-            sender = await message.get_sender()
+                    print(
+                        "Найден потенциальный заказ:",
+                        message.message[:100].replace("\\n", " ")
+                    )
 
-            author_name = ""
-            author_username = ""
-            author_url = ""
+                    sender = await message.get_sender()
 
-            if sender:
-                first_name = getattr(sender, "first_name", "") or ""
-                last_name = getattr(sender, "last_name", "") or ""
-                sender_title = getattr(sender, "title", "") or ""
+                    author_name = ""
+                    author_username = ""
+                    author_url = ""
 
-                author_name = (
-                    getattr(message, "post_author", None)
-                    or f"{first_name} {last_name}".strip()
-                    or sender_title
-                )
+                    if sender:
+                        first_name = getattr(sender, "first_name", "") or ""
+                        last_name = getattr(sender, "last_name", "") or ""
+                        sender_title = getattr(sender, "title", "") or ""
 
-                author_username = getattr(sender, "username", "") or ""
+                        author_name = (
+                            getattr(message, "post_author", None)
+                            or f"{first_name} {last_name}".strip()
+                            or sender_title
+                        )
 
-                if author_username:
-                    author_url = f"https://t.me/{author_username}"
+                        author_username = getattr(sender, "username", "") or ""
 
-            publication = {
-                "author_name": author_name,
-                "author_username": author_username,
-                "author_url": author_url,
-                "id": message_id,
-                "source": "telegram",
-                "channel": CHANNEL,
-                "text": message.message,
-                "url": f"https://t.me/{CHANNEL}/{message.id}",
-                "published_at": (
-                    message.date.isoformat()
-                    if message.date
-                    else None
-                ),
-                "collected_at": (
-                    datetime.now().astimezone().isoformat()
-                ),
-                "status": "new",
-                "lead_score": score_lead(message.message),
-            }
+                        if author_username:
+                            author_url = f"https://t.me/{author_username}"
 
-            saved.append(publication)
-            new_publications.append(publication)
-            existing_ids.add(key)
-            new_count += 1
+                    publication = {
+                        "author_name": author_name,
+                        "author_username": author_username,
+                        "author_url": author_url,
+                        "id": message_id,
+                        "source": "telegram",
+                        "channel": channel,
+                        "text": message.message,
+                        "url": f"https://t.me/{channel}/{message.id}",
+                        "published_at": (
+                            message.date.isoformat()
+                            if message.date
+                            else None
+                        ),
+                        "collected_at": datetime.now().astimezone().isoformat(),
+                        "status": "new",
+                        "lead_score": score_lead(message.message),
+                    }
 
-            print(f"\\nНайдена публикация #{message.id}:")
-            print(message.message[:200])
+                    saved.append(publication)
+                    new_publications.append(publication)
+                    existing_ids.add(key)
+                    new_count += 1
+
+                    print(f"Найдена публикация #{message.id}:")
+                    print(message.message[:200])
+
+            except Exception as error:
+                print(f"Ошибка при сканировании {channel}: {error}")
 
         save_publications(saved)
 
